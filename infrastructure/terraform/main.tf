@@ -124,13 +124,70 @@ resource "aws_instance" "jenkins_master" {
               sudo systemctl enable jenkins
               sudo systemctl start jenkins
               
-              # Print status for debugging
-              echo "Jenkins installation completed"
-              sudo systemctl status jenkins
+              # Wait for Jenkins to start up properly
+              echo "Waiting for Jenkins to start..."
+              timeout 300 bash -c '
+                until curl -s -L http://localhost:8080 > /dev/null; do
+                  echo "Waiting for Jenkins to start... retrying in 5s"
+                  sleep 5
+                done'
+              
+              # Wait additional time for Jenkins to fully initialize
+              sleep 30
+              
+              # Get the initial admin password
+              ADMIN_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
+              echo "Admin password: $ADMIN_PASSWORD"
+              
+              # Download Jenkins CLI with retry
+              echo "Downloading Jenkins CLI..."
+              for i in {1..12}; do
+                if curl -s -L http://localhost:8080/jnlpJars/jenkins-cli.jar -o jenkins-cli.jar; then
+                  break
+                fi
+                echo "Failed to download jenkins-cli.jar, attempt $i/12. Retrying in 10s..."
+                sleep 10
+              done
+              
+              if [ ! -f jenkins-cli.jar ]; then
+                echo "Failed to download jenkins-cli.jar after all attempts"
+                exit 1
+              fi
+              
+              # Install required plugins with retry logic
+              echo "Installing Jenkins plugins..."
+              PLUGINS="dependency-check-jenkins-plugin codeql workflow-aggregator git pipeline-utility-steps configuration-as-code"
+              
+              for plugin in $PLUGINS; do
+                echo "Installing plugin: $plugin"
+                for i in {1..3}; do
+                  if java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD install-plugin "$plugin" -deploy; then
+                    echo "Successfully installed $plugin"
+                    break
+                  fi
+                  echo "Failed to install $plugin, attempt $i/3. Retrying in 10s..."
+                  sleep 10
+                done
+              done
+              
+              # Restart Jenkins
+              echo "Restarting Jenkins..."
+              java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD safe-restart || true
+              
+              # Wait for Jenkins to come back up
+              echo "Waiting for Jenkins to restart..."
+              sleep 30
+              timeout 300 bash -c '
+                until curl -s -L http://localhost:8080 > /dev/null; do
+                  echo "Waiting for Jenkins to restart... retrying in 5s"
+                  sleep 5
+                done'
+              
+              echo "Jenkins installation and plugin setup completed"
               EOF
 
   tags = {
     Name        = "jenkins-master"
     Environment = var.environment
   }
-} 
+}

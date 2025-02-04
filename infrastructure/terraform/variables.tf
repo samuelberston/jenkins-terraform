@@ -41,19 +41,19 @@ variable "admin_cidr_blocks" {
 }
 
 variable "jenkins_master_ami" {
-  description = "AMI ID for Jenkins master"
+  description = "AMI ID for Jenkins master (Amazon Linux 2023)"
   type        = string
-  default     = "ami-0dfa9f9795100123a"  # Amazon Linux 2 AMI in us-west-1
+  default     = "ami-08d4f6bbae664bd41"  # Amazon Linux 2023 AMI in us-west-1
 }
 
 variable "jenkins_master_instance_type" {
   description = "Instance type for Jenkins master"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.medium"  # Recommended for Jenkins production use
 }
 
 variable "key_name" {
   description = "Name of the SSH key pair"
   type        = string
-  default     = "jenkins-key"  # Adding default value to match the key we're creating
+  default     = "jenkins-key"
 }
