@@ -68,12 +68,65 @@ resource "aws_instance" "jenkins_master" {
 
   user_data = <<-EOF
               #!/bin/bash
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              echo "Starting Jenkins installation..."
+              
+              # Wait for any existing yum processes to finish
+              while pgrep -f yum > /dev/null; do
+                echo "Waiting for other yum processes to complete..."
+                sleep 10
+              done
+              
+              # Update system
               sudo yum update -y
+              
+              # Install Java 17
+              sudo yum install -y java-17-amazon-corretto
+              
+              # Add Jenkins repo
               sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
-              sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
-              sudo yum install jenkins java-11-openjdk-devel -y
-              sudo systemctl start jenkins
+              sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+              
+              # Install Jenkins
+              sudo yum install -y jenkins --nogpgcheck
+              
+              # Fix Jenkins service file
+              cat <<-SYSTEMD | sudo tee /etc/systemd/system/jenkins.service
+              [Unit]
+              Description=Jenkins Continuous Integration Server
+              Requires=network.target
+              After=network.target
+              
+              [Service]
+              Type=simple
+              Environment="JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto"
+              Environment="JENKINS_HOME=/var/lib/jenkins"
+              Environment="JENKINS_PORT=8080"
+              User=jenkins
+              ExecStart=/usr/bin/java -Djava.awt.headless=true -jar /usr/share/java/jenkins.war --webroot=/var/cache/jenkins/war --httpPort=8080
+              Restart=on-failure
+              RestartSec=10
+              
+              [Install]
+              WantedBy=multi-user.target
+              SYSTEMD
+              
+              # Set up Jenkins directories
+              sudo mkdir -p /var/lib/jenkins
+              sudo mkdir -p /var/cache/jenkins/war
+              sudo chown -R jenkins:jenkins /var/lib/jenkins
+              sudo chown -R jenkins:jenkins /var/cache/jenkins
+              sudo chmod -R 755 /var/lib/jenkins
+              sudo chmod -R 755 /var/cache/jenkins
+              
+              # Reload systemd and start Jenkins
+              sudo systemctl daemon-reload
               sudo systemctl enable jenkins
+              sudo systemctl start jenkins
+              
+              # Print status for debugging
+              echo "Jenkins installation completed"
+              sudo systemctl status jenkins
               EOF
 
   tags = {
