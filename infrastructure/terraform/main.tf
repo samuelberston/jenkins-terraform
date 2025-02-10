@@ -83,6 +83,16 @@ resource "aws_instance" "jenkins_master" {
               # Install Java 17
               sudo yum install -y java-17-amazon-corretto
               
+              # Install required packages
+              sudo yum install -y unzip wget
+
+              # Install CodeQL CLI
+              CODEQL_VERSION="2.15.5"
+              wget https://github.com/github/codeql-cli-binaries/releases/download/v$${CODEQL_VERSION}/codeql-linux64.zip
+              unzip codeql-linux64.zip
+              sudo mv codeql /usr/local/
+              sudo ln -s /usr/local/codeql/codeql /usr/local/bin/codeql
+              
               # Add Jenkins repo
               sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
               sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
