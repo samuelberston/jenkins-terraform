@@ -26,4 +26,29 @@ output "ssh_key_name" {
 output "ssh_key_secret_name" {
   description = "Name of the secret containing the SSH private key"
   value       = aws_secretsmanager_secret.jenkins_key.name
+}
+
+output "jenkins_public_ip" {
+  description = "Public IP of the Jenkins instance"
+  value       = module.jenkins.jenkins_master_public_ip
+}
+
+output "jenkins_private_ip" {
+  description = "Private IP of the Jenkins instance"
+  value       = module.jenkins.jenkins_master_private_ip
+}
+
+output "jenkins_private_ip_cidr" {
+  description = "CIDR block for Jenkins master private IP"
+  value       = module.jenkins.jenkins_master_private_ip_cidr
+}
+
+output "jenkins_url" {
+  description = "URL for Jenkins master"
+  value       = module.jenkins.jenkins_url
+}
+
+output "jenkins_security_group_id" {
+  description = "Security Group ID for Jenkins"
+  value       = module.jenkins.jenkins_master_security_group_id
 } 
