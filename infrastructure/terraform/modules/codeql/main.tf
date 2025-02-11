@@ -82,6 +82,20 @@ resource "aws_instance" "codeql" {
               #!/bin/bash
               yum update -y
               yum install -y git docker wget unzip
+
+              # Install Node.js and npm
+              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+              export NVM_DIR="$HOME/.nvm"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+              [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+              nvm install --lts
+              nvm use --lts
+
+              # Make Node.js available system-wide
+              ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/node" /usr/local/bin/node
+              ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/npm" /usr/local/bin/npm
+
+              # Start and enable Docker
               systemctl start docker
               systemctl enable docker
 
@@ -94,8 +108,63 @@ resource "aws_instance" "codeql" {
               mv codeql /usr/local/
               ln -s /usr/local/codeql/codeql /usr/local/bin/codeql
 
-              # Verify installation
+              # Create a script to initialize environment variables
+              cat > /etc/profile.d/codeql-env.sh << 'ENVSCRIPT'
+              export PATH="/usr/local/bin:$PATH"
+              export NODE_PATH="/usr/local/lib/node_modules"
+              ENVSCRIPT
+
+              # Make the script executable
+              chmod +x /etc/profile.d/codeql-env.sh
+
+              # Verify installations
+              source /etc/profile.d/codeql-env.sh
               codeql version
+              node --version
+              npm --version
+
+              # Install OWASP Dependency Check
+              DC_VERSION="12.0.2"
+              DC_DIR="/usr/share/dependency-check"
+              sudo mkdir -p $DC_DIR
+              cd $DC_DIR
+              wget "https://github.com/jeremylong/DependencyCheck/releases/download/v$${DC_VERSION}/dependency-check-$${DC_VERSION}-release.zip"
+              unzip "dependency-check-$${DC_VERSION}-release.zip"
+              rm "dependency-check-$${DC_VERSION}-release.zip"
+              sudo ln -s $DC_DIR/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check
+
+              # Initialize NVD database (this may take a while but saves time later)
+              dependency-check --updateonly
+
+              # Create a daily cron job to update the NVD database
+              echo "0 0 * * * dependency-check --updateonly" | sudo tee -a /var/spool/cron/root
+
+              # Create jenkins user and group
+              sudo groupadd jenkins
+              sudo useradd -g jenkins jenkins
+              
+              # Set up directories for Jenkins agent
+              sudo mkdir -p /home/jenkins
+              sudo chown -R jenkins:jenkins /home/jenkins
+              
+              # Give jenkins user access to necessary directories
+              sudo usermod -aG docker jenkins
+              sudo mkdir -p /var/lib/codeql
+              sudo chown -R jenkins:jenkins /var/lib/codeql
+              sudo mkdir -p /var/lib/dependency-check
+              sudo chown -R jenkins:jenkins /var/lib/dependency-check
+              
+              # Allow jenkins user to execute required commands
+              echo "jenkins ALL=(ALL) NOPASSWD: /usr/local/bin/codeql" | sudo tee -a /etc/sudoers.d/jenkins
+              echo "jenkins ALL=(ALL) NOPASSWD: /usr/local/bin/dependency-check" | sudo tee -a /etc/sudoers.d/jenkins
+              
+              # Set up SSH access for jenkins user
+              sudo mkdir -p /home/jenkins/.ssh
+              sudo touch /home/jenkins/.ssh/authorized_keys
+              sudo chown -R jenkins:jenkins /home/jenkins/.ssh
+              sudo chmod 700 /home/jenkins/.ssh
+              sudo chmod 600 /home/jenkins/.ssh/authorized_keys
+              
               EOF
   )
 

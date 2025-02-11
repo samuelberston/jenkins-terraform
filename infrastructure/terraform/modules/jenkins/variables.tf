@@ -46,3 +46,13 @@ variable "allowed_outbound_cidr_blocks" {
   type        = list(string)
   default     = ["0.0.0.0/0"]  # Default allows all outbound traffic
 }
+
+variable "jenkins_ssh_key_secret_name" {
+  description = "Name of the secret containing the Jenkins SSH private key"
+  type        = string
+}
+
+variable "jenkins_ssh_key_secret_arn" {
+  description = "ARN of the secret containing the Jenkins SSH private key"
+  type        = string
+}

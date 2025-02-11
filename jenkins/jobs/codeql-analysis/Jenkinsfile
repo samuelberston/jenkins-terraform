@@ -1,5 +1,9 @@
 pipeline {
-    agent any
+    agent {
+        node {
+            label 'codeql-agent'
+        }
+    }
     
     environment {
         CODEQL_HOME = '/usr/local/codeql'
@@ -15,6 +19,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                cleanWs()
                 git branch: params.BRANCH, url: params.REPOSITORY_URL
             }
         }
@@ -24,7 +29,8 @@ pipeline {
                 sh """
                     ${CODEQL_CLI} database create codeql-db \
                         --language=${params.LANGUAGE} \
-                        --source-root .
+                        --source-root . \
+                        --threads=0
                 """
             }
         }
@@ -35,7 +41,8 @@ pipeline {
                     ${CODEQL_CLI} database analyze codeql-db \
                         ${CODEQL_HOME}/ql/${params.LANGUAGE}-queries/security-and-quality.qls \
                         --format=sarif-latest \
-                        --output=results.sarif
+                        --output=results.sarif \
+                        --threads=0
                 """
             }
         }
@@ -46,6 +53,8 @@ pipeline {
                     tool: sarif(pattern: 'results.sarif'),
                     qualityGates: [[threshold: 1, type: 'TOTAL', unstable: true]]
                 )
+                
+                archiveArtifacts artifacts: 'results.sarif', fingerprint: true
             }
         }
     }

@@ -37,6 +37,9 @@ module "jenkins" {
   admin_cidr_blocks   = var.admin_cidr_blocks
   # allowed_outbound_cidr_blocks = ["0.0.0.0/0"]  # Optional: uncomment to override default
   
+  jenkins_ssh_key_secret_name = aws_secretsmanager_secret.jenkins_key.name
+  jenkins_ssh_key_secret_arn  = aws_secretsmanager_secret.jenkins_key.arn
+  
   tags = {
     Environment = var.environment
     Project     = "shared-infrastructure"
@@ -58,4 +61,5 @@ module "codeql" {
   ]
   allowed_http_cidr_blocks = [format("%s/32", module.jenkins.jenkins_master_private_ip)]
   allowed_https_cidr_blocks = [format("%s/32", module.jenkins.jenkins_master_private_ip)]
+  volume_size = 64  # Increase from default 32GB to 64GB
 }

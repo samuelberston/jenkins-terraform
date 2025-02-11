@@ -165,7 +165,7 @@ resource "aws_instance" "jenkins_master" {
               
               # Install required plugins with retry logic
               echo "Installing Jenkins plugins..."
-              PLUGINS="dependency-check-jenkins-plugin codeql workflow-aggregator git pipeline-utility-steps configuration-as-code"
+              PLUGINS="dependency-check-jenkins-plugin codeql workflow-aggregator git pipeline-utility-steps configuration-as-code ssh-agent credentials-binding"
               
               for plugin in $PLUGINS; do
                 echo "Installing plugin: $plugin"
@@ -183,7 +183,7 @@ resource "aws_instance" "jenkins_master" {
               echo "Restarting Jenkins..."
               java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD safe-restart || true
               
-              # Wait for Jenkins to come back up
+              # Wait for Jenkins to restart and come back up
               echo "Waiting for Jenkins to restart..."
               sleep 30
               timeout 300 bash -c '
@@ -191,8 +191,38 @@ resource "aws_instance" "jenkins_master" {
                   echo "Waiting for Jenkins to restart... retrying in 5s"
                   sleep 5
                 done'
-              
-              echo "Jenkins installation and plugin setup completed"
+
+              # Get the SSH private key from AWS Secrets Manager
+              echo "Retrieving SSH key from Secrets Manager..."
+              REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+              SSH_KEY=$(aws secretsmanager get-secret-value \
+                --region $REGION \
+                --secret-id ${var.jenkins_ssh_key_secret_name} \
+                --query SecretString \
+                --output text)
+
+              # Create Jenkins credentials using the CLI
+              echo "Adding SSH credentials to Jenkins..."
+              cat <<-CREDS > /tmp/ssh-cred.xml
+              <com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey plugin="ssh-credentials@1.19">
+                <scope>GLOBAL</scope>
+                <id>codeql-ssh-key</id>
+                <description>SSH key for CodeQL instance</description>
+                <username>ec2-user</username>
+                <privateKeySource class="com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey\$DirectEntryPrivateKeySource">
+                  <privateKey>$${SSH_KEY}</privateKey>
+                </privateKeySource>
+              </com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey>
+              CREDS
+
+              # Add the credentials using Jenkins CLI
+              java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD \
+                create-credentials-by-xml system::system::jenkins _ < /tmp/ssh-cred.xml
+
+              # Clean up
+              rm /tmp/ssh-cred.xml
+
+              echo "Jenkins setup completed"
               EOF
 
   tags = merge(
