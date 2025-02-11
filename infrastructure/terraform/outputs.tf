@@ -51,4 +51,14 @@ output "jenkins_url" {
 output "jenkins_security_group_id" {
   description = "Security Group ID for Jenkins"
   value       = module.jenkins.jenkins_master_security_group_id
+}
+
+output "codeql_ssh_command" {
+  description = "Command to SSH into the CodeQL instance"
+  value       = "aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.jenkins_key.name} --query 'SecretString' --output text > jenkins-key.pem && chmod 400 jenkins-key.pem && ssh -i jenkins-key.pem ec2-user@${module.codeql.public_ip}"
+}
+
+output "jenkins_ssh_command" {
+  description = "Command to SSH into the Jenkins instance"
+  value       = "aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.jenkins_key.name} --query 'SecretString' --output text > jenkins-key.pem && chmod 400 jenkins-key.pem && ssh -i jenkins-key.pem ec2-user@${module.jenkins.jenkins_master_public_ip}"
 } 
