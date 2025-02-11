@@ -49,4 +49,24 @@ resource "aws_lambda_permission" "api_gateway" {
   function_name = aws_lambda_function.trigger_scan.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.security_scan.execution_arn}/*"
+}
+
+# API Gateway Deployment
+resource "aws_api_gateway_deployment" "security_scan" {
+  rest_api_id = aws_api_gateway_rest_api.security_scan.id
+  
+  depends_on = [
+    aws_api_gateway_integration.lambda_integration
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# API Gateway Stage
+resource "aws_api_gateway_stage" "prod" {
+  deployment_id = aws_api_gateway_deployment.security_scan.id
+  rest_api_id   = aws_api_gateway_rest_api.security_scan.id
+  stage_name    = "prod"
 } 

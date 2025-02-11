@@ -66,4 +66,35 @@ output "jenkins_ssh_command" {
 output "jenkins_admin_password" {
   description = "Command to retrieve the Jenkins admin password (dev environment only)"
   value       = var.environment == "dev" ? "aws secretsmanager get-secret-value --secret-id jenkins-admin-password-${var.environment} --query 'SecretString' --output text" : "Password retrieval disabled in this environment"
+}
+
+# Lambda Function Outputs
+output "lambda_function_name" {
+  description = "Name of the Lambda function"
+  value       = module.security_scan_api.lambda_function_name
+}
+
+output "lambda_function_arn" {
+  description = "ARN of the Lambda function"
+  value       = module.security_scan_api.lambda_function_arn
+}
+
+output "lambda_invoke_url" {
+  description = "Invoke URL for the Lambda function via API Gateway"
+  value       = module.security_scan_api.api_gateway_invoke_url
+}
+
+output "api_gateway_id" {
+  description = "ID of the API Gateway"
+  value       = module.security_scan_api.api_gateway_id
+}
+
+output "api_gateway_stage_name" {
+  description = "Name of the API Gateway stage"
+  value       = module.security_scan_api.api_gateway_stage_name
+}
+
+output "api_gateway_endpoint" {
+  description = "Full endpoint URL of the API"
+  value       = module.security_scan_api.api_gateway_endpoint
 } 
