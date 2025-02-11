@@ -133,11 +133,11 @@ resource "aws_instance" "security_scanner" {
               rm "dependency-check-$${DC_VERSION}-release.zip"
               sudo ln -s $DC_DIR/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check
 
-              # Initialize NVD database (this may take a while but saves time later)
-              dependency-check --updateonly
+              # Skip initial NVD database download
+              # dependency-check --updateonly
 
-              # Create a daily cron job to update the NVD database
-              echo "0 0 * * * dependency-check --updateonly" | sudo tee -a /var/spool/cron/root
+              # Create a daily cron job to update the NVD database (commented out for now)
+              # echo "0 0 * * * dependency-check --updateonly" | sudo tee -a /var/spool/cron/root
 
               # Create jenkins user and group
               sudo groupadd jenkins

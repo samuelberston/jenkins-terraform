@@ -1,0 +1,192 @@
+pipeline {
+    agent {
+        node {
+            label 'security-scanner-agent'
+        }
+    }
+    
+    environment {
+        DB_CREDENTIALS = credentials('db-credentials-secret-arn')  // ARN of the RDS credentials in Secrets Manager
+    }
+    
+    parameters {
+        string(name: 'REPOSITORY_URL', description: 'Git repository URL that was scanned')
+        string(name: 'BRANCH', defaultValue: 'main', description: 'Branch that was scanned')
+        string(name: 'COMMIT_HASH', description: 'Commit hash that was scanned')
+        choice(name: 'SCAN_TYPE', choices: ['codeql', 'dependency_check'], description: 'Type of security scan')
+        string(name: 'RESULTS_FILE', description: 'Path to the SARIF results file')
+        string(name: 'SCAN_PATH', defaultValue: '.', description: 'Path that was scanned')
+        string(name: 'LANGUAGE', defaultValue: '', description: 'Programming language (for CodeQL)')
+    }
+    
+    stages {
+        stage('Process Results') {
+            steps {
+                script {
+                    // Fetch database credentials from AWS Secrets Manager
+                    def dbCreds = sh(
+                        script: """
+                            aws secretsmanager get-secret-value \
+                                --secret-id ${DB_CREDENTIALS} \
+                                --query SecretString \
+                                --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    
+                    // Parse JSON credentials
+                    def creds = readJSON text: dbCreds
+                    
+                    // Create Python virtual environment
+                    sh '''
+                        python3 -m venv venv
+                        . venv/bin/activate
+                        pip install psycopg2-binary
+                    '''
+                    
+                    // Write Python script to process SARIF and store in database
+                    writeFile file: 'process_results.py', text: '''
+                        import json
+                        import sys
+                        import psycopg2
+                        from datetime import datetime
+                        import os
+                        
+                        def get_severity(rule_level):
+                            severity_map = {
+                                'error': 'critical',
+                                'warning': 'high',
+                                'note': 'medium',
+                                'none': 'low'
+                            }
+                            return severity_map.get(rule_level, 'medium')
+                        
+                        def store_results(db_params, repo_url, branch, commit_hash, scan_type, 
+                                       results_file, scan_path, language):
+                            with psycopg2.connect(**db_params) as conn:
+                                with conn.cursor() as cur:
+                                    # Insert or get repository
+                                    cur.execute("""
+                                        INSERT INTO repositories (url, name)
+                                        VALUES (%s, %s)
+                                        ON CONFLICT (url) DO UPDATE SET last_scanned_at = CURRENT_TIMESTAMP
+                                        RETURNING id
+                                    """, (repo_url, repo_url.split('/')[-1].replace('.git', '')))
+                                    repo_id = cur.fetchone()[0]
+                                    
+                                    # Create scan run
+                                    cur.execute("""
+                                        INSERT INTO scan_runs 
+                                        (repository_id, scan_type, branch, commit_hash, status, 
+                                         scan_path, language, completed_at)
+                                        VALUES (%s, %s::scan_type, %s, %s, 'completed', %s, %s, CURRENT_TIMESTAMP)
+                                        RETURNING id
+                                    """, (repo_id, scan_type, branch, commit_hash, scan_path, language))
+                                    scan_run_id = cur.fetchone()[0]
+                                    
+                                    # Process SARIF results
+                                    with open(results_file) as f:
+                                        sarif_data = json.load(f)
+                                    
+                                    metrics = {
+                                        'total_issues': 0,
+                                        'critical_count': 0,
+                                        'high_count': 0,
+                                        'medium_count': 0,
+                                        'low_count': 0
+                                    }
+                                    
+                                    for run in sarif_data.get('runs', []):
+                                        for result in run.get('results', []):
+                                            severity = get_severity(result.get('level', 'warning'))
+                                            metrics['total_issues'] += 1
+                                            metrics[f'{severity}_count'] += 1
+                                            
+                                            # Get location information
+                                            location = result.get('locations', [{}])[0]
+                                            physical_location = location.get('physicalLocation', {})
+                                            
+                                            # Insert vulnerability
+                                            cur.execute("""
+                                                INSERT INTO vulnerabilities 
+                                                (scan_run_id, tool_specific_id, title, description,
+                                                 severity, file_path, line_number)
+                                                VALUES (%s, %s, %s, %s, %s::severity_level, %s, %s)
+                                            """, (
+                                                scan_run_id,
+                                                result.get('ruleId'),
+                                                result.get('message', {}).get('text', ''),
+                                                result.get('message', {}).get('text', ''),
+                                                severity,
+                                                physical_location.get('artifactLocation', {}).get('uri'),
+                                                physical_location.get('region', {}).get('startLine')
+                                            ))
+                                    
+                                    # Store metrics
+                                    cur.execute("""
+                                        INSERT INTO scan_metrics 
+                                        (scan_run_id, total_issues, critical_count, high_count,
+                                         medium_count, low_count)
+                                        VALUES (%s, %s, %s, %s, %s, %s)
+                                    """, (
+                                        scan_run_id,
+                                        metrics['total_issues'],
+                                        metrics['critical_count'],
+                                        metrics['high_count'],
+                                        metrics['medium_count'],
+                                        metrics['low_count']
+                                    ))
+                                    
+                                    conn.commit()
+                        
+                        if __name__ == '__main__':
+                            db_params = {
+                                'dbname': os.environ['DB_NAME'],
+                                'user': os.environ['DB_USER'],
+                                'password': os.environ['DB_PASSWORD'],
+                                'host': os.environ['DB_HOST'],
+                                'port': '5432'
+                            }
+                            
+                            store_results(
+                                db_params,
+                                os.environ['REPO_URL'],
+                                os.environ['BRANCH'],
+                                os.environ['COMMIT_HASH'],
+                                os.environ['SCAN_TYPE'],
+                                os.environ['RESULTS_FILE'],
+                                os.environ['SCAN_PATH'],
+                                os.environ['LANGUAGE']
+                            )
+                    '''
+                    
+                    // Run the Python script
+                    withEnv([
+                        "DB_NAME=${creds.dbname}",
+                        "DB_USER=${creds.username}",
+                        "DB_PASSWORD=${creds.password}",
+                        "DB_HOST=${creds.host}",
+                        "REPO_URL=${params.REPOSITORY_URL}",
+                        "BRANCH=${params.BRANCH}",
+                        "COMMIT_HASH=${params.COMMIT_HASH}",
+                        "SCAN_TYPE=${params.SCAN_TYPE}",
+                        "RESULTS_FILE=${params.RESULTS_FILE}",
+                        "SCAN_PATH=${params.SCAN_PATH}",
+                        "LANGUAGE=${params.LANGUAGE}"
+                    ]) {
+                        sh '''
+                            . venv/bin/activate
+                            python process_results.py
+                        '''
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+    }
+} 

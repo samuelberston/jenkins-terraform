@@ -47,6 +47,19 @@ pipeline {
             }
         }
         
+        stage('Store Results') {
+            steps {
+                build job: 'store-findings', parameters: [
+                    string(name: 'REPOSITORY_URL', value: params.REPOSITORY_URL),
+                    string(name: 'BRANCH', value: params.BRANCH),
+                    string(name: 'COMMIT_HASH', value: sh(script: 'git rev-parse HEAD', returnStdout: true).trim()),
+                    string(name: 'SCAN_TYPE', value: 'codeql'),
+                    string(name: 'RESULTS_FILE', value: 'results.sarif'),
+                    string(name: 'LANGUAGE', value: params.LANGUAGE)
+                ]
+            }
+        }
+        
         stage('Report') {
             steps {
                 recordIssues(

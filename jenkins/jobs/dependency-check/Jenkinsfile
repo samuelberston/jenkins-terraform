@@ -72,6 +72,19 @@ pipeline {
                 )
             }
         }
+        
+        stage('Store Results') {
+            steps {
+                build job: 'store-findings', parameters: [
+                    string(name: 'REPOSITORY_URL', value: params.REPOSITORY_URL),
+                    string(name: 'BRANCH', value: params.BRANCH),
+                    string(name: 'COMMIT_HASH', value: sh(script: 'git rev-parse HEAD', returnStdout: true).trim()),
+                    string(name: 'SCAN_TYPE', value: 'dependency_check'),
+                    string(name: 'RESULTS_FILE', value: 'dependency-check-report.sarif'),
+                    string(name: 'SCAN_PATH', value: params.SCAN_PATH)
+                ]
+            }
+        }
     }
     
     post {

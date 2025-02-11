@@ -39,7 +39,7 @@ resource "aws_security_group" "jenkins_master_sg" {
   }
 }
 
-# Add data source for AMI like CodeQL module
+# Add data source for AMI
 data "aws_ami" "amazon_linux_2023" {
   most_recent = true
   owners      = ["amazon"]
@@ -50,6 +50,15 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
+# Add data source for current region
+data "aws_region" "current" {}
+
+# Create a secret for Jenkins admin password
+resource "aws_secretsmanager_secret" "jenkins_admin_password" {
+  name        = "jenkins-admin-password-${var.environment}"
+  description = "Initial Jenkins administrator password for ${var.environment} environment"
+}
+
 # Jenkins master instance
 resource "aws_instance" "jenkins_master" {
   ami           = data.aws_ami.amazon_linux_2023.id
@@ -57,18 +66,25 @@ resource "aws_instance" "jenkins_master" {
   subnet_id     = var.subnet_id
   
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_master.name
 
   vpc_security_group_ids = [aws_security_group.jenkins_master_sg.id]
   key_name              = var.key_name
 
   root_block_device {
     volume_size = 30
+    encrypted   = true
   }
 
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
               echo "Starting Jenkins installation..."
+              
+              # Install SSM agent
+              yum install -y amazon-ssm-agent
+              systemctl enable amazon-ssm-agent
+              systemctl start amazon-ssm-agent
               
               # Wait for any existing yum processes to finish
               while pgrep -f yum > /dev/null; do
@@ -148,82 +164,18 @@ resource "aws_instance" "jenkins_master" {
               ADMIN_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
               echo "Admin password: $ADMIN_PASSWORD"
               
-              # Download Jenkins CLI with retry
-              echo "Downloading Jenkins CLI..."
-              for i in {1..12}; do
-                if curl -s -L http://localhost:8080/jnlpJars/jenkins-cli.jar -o jenkins-cli.jar; then
-                  break
-                fi
-                echo "Failed to download jenkins-cli.jar, attempt $i/12. Retrying in 10s..."
-                sleep 10
-              done
+              # Store admin password in Secrets Manager
+              aws secretsmanager put-secret-value \
+                --secret-id ${aws_secretsmanager_secret.jenkins_admin_password.name} \
+                --secret-string "$ADMIN_PASSWORD" \
+                --region ${data.aws_region.current.name}
               
-              if [ ! -f jenkins-cli.jar ]; then
-                echo "Failed to download jenkins-cli.jar after all attempts"
-                exit 1
-              fi
-              
-              # Install required plugins with retry logic
-              echo "Installing Jenkins plugins..."
-              PLUGINS="dependency-check-jenkins-plugin codeql workflow-aggregator git pipeline-utility-steps configuration-as-code ssh-agent credentials-binding"
-              
-              for plugin in $PLUGINS; do
-                echo "Installing plugin: $plugin"
-                for i in {1..3}; do
-                  if java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD install-plugin "$plugin" -deploy; then
-                    echo "Successfully installed $plugin"
-                    break
-                  fi
-                  echo "Failed to install $plugin, attempt $i/3. Retrying in 10s..."
-                  sleep 10
-                done
-              done
-              
-              # Restart Jenkins
-              echo "Restarting Jenkins..."
-              java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD safe-restart || true
-              
-              # Wait for Jenkins to restart and come back up
-              echo "Waiting for Jenkins to restart..."
-              sleep 30
-              timeout 300 bash -c '
-                until curl -s -L http://localhost:8080 > /dev/null; do
-                  echo "Waiting for Jenkins to restart... retrying in 5s"
-                  sleep 5
-                done'
-
-              # Get the SSH private key from AWS Secrets Manager
-              echo "Retrieving SSH key from Secrets Manager..."
-              REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
-              SSH_KEY=$(aws secretsmanager get-secret-value \
-                --region $REGION \
-                --secret-id ${var.jenkins_ssh_key_secret_name} \
-                --query SecretString \
-                --output text)
-
-              # Create Jenkins credentials using the CLI
-              echo "Adding SSH credentials to Jenkins..."
-              cat <<-CREDS > /tmp/ssh-cred.xml
-              <com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey plugin="ssh-credentials@1.19">
-                <scope>GLOBAL</scope>
-                <id>codeql-ssh-key</id>
-                <description>SSH key for CodeQL instance</description>
-                <username>ec2-user</username>
-                <privateKeySource class="com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey\$DirectEntryPrivateKeySource">
-                  <privateKey>$${SSH_KEY}</privateKey>
-                </privateKeySource>
-              </com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey>
-              CREDS
-
-              # Add the credentials using Jenkins CLI
-              java -jar jenkins-cli.jar -s http://localhost:8080/ -auth admin:$ADMIN_PASSWORD \
-                create-credentials-by-xml system::system::jenkins _ < /tmp/ssh-cred.xml
-
-              # Clean up
-              rm /tmp/ssh-cred.xml
-
               echo "Jenkins setup completed"
               EOF
+
+  metadata_options {
+    http_tokens = "required"  # Use IMDSv2
+  }
 
   tags = merge(
     {
@@ -233,4 +185,37 @@ resource "aws_instance" "jenkins_master" {
     },
     var.tags
   )
+}
+
+# Add a more explicit wait condition
+resource "time_sleep" "wait_for_jenkins" {
+  depends_on = [aws_instance.jenkins_master]
+  create_duration = "180s"
+}
+
+# Add an SSM command to verify Jenkins initialization
+resource "aws_ssm_association" "verify_jenkins" {
+  depends_on = [time_sleep.wait_for_jenkins]
+  name = "AWS-RunShellScript"
+  
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.jenkins_master.id]
+  }
+
+  parameters = {
+    commands = <<-EOF
+      #!/bin/bash
+      for i in {1..30}; do
+        if [ -f /var/lib/jenkins/secrets/initialAdminPassword ]; then
+          ADMIN_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
+          aws secretsmanager put-secret-value --secret-id ${aws_secretsmanager_secret.jenkins_admin_password.name} --secret-string "$ADMIN_PASSWORD" --region ${data.aws_region.current.name}
+          exit 0
+        fi
+        echo "Waiting for Jenkins to initialize... ($i/30)"
+        sleep 10
+      done
+      exit 1
+    EOF
+  }
 }

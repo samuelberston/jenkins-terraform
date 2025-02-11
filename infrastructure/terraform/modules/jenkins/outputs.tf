@@ -21,4 +21,20 @@ output "jenkins_master_private_ip_cidr" {
 output "jenkins_master_security_group_id" {
   description = "Security group ID of Jenkins master"
   value       = aws_security_group.jenkins_master_sg.id
+}
+
+output "admin_password_secret_name" {
+  description = "Name of the secret containing the Jenkins admin password"
+  value       = aws_secretsmanager_secret.jenkins_admin_password.name
+}
+
+output "admin_password_secret_arn" {
+  description = "ARN of the secret containing the Jenkins admin password"
+  value       = aws_secretsmanager_secret.jenkins_admin_password.arn
+}
+
+output "jenkins_admin_password" {
+  description = "Command to retrieve the Jenkins admin password (dev environment only)"
+  value       = var.environment == "dev" ? "aws secretsmanager get-secret-value --secret-id jenkins-admin-password-${var.environment} --query 'SecretString' --output text" : "Password retrieval disabled in this environment"
+  depends_on  = [aws_ssm_association.verify_jenkins]
 } 

@@ -61,4 +61,9 @@ output "security_scanner_ssh_command" {
 output "jenkins_ssh_command" {
   description = "Command to SSH into the Jenkins instance"
   value       = "aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.jenkins_key.name} --query 'SecretString' --output text > jenkins-key.pem && chmod 400 jenkins-key.pem && ssh -i jenkins-key.pem ec2-user@${module.jenkins.jenkins_master_public_ip}"
+}
+
+output "jenkins_admin_password" {
+  description = "Command to retrieve the Jenkins admin password (dev environment only)"
+  value       = var.environment == "dev" ? "aws secretsmanager get-secret-value --secret-id jenkins-admin-password-${var.environment} --query 'SecretString' --output text" : "Password retrieval disabled in this environment"
 } 
