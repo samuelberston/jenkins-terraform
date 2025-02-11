@@ -91,3 +91,16 @@ module "rds" {
     Terraform   = "true"
   }
 }
+
+# Add API module
+module "security_scan_api" {
+  source = "./modules/api"
+  
+  environment = var.environment
+  jenkins_url = module.jenkins.jenkins_url
+  
+  tags = {
+    Environment = var.environment
+    Project     = "security-scanning"
+  }
+}
