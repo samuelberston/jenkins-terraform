@@ -58,4 +58,9 @@ variable "allowed_https_cidr_blocks" {
   description = "List of CIDR blocks allowed to connect via HTTPS"
   type        = list(string)
   default     = ["0.0.0.0/0"]  # Warning: This allows access from anywhere, consider restricting in production
+}
+
+variable "db_credentials_secret_arn" {
+  description = "ARN of the secret containing the database credentials"
+  type        = string
 } 

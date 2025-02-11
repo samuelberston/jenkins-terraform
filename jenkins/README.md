@@ -32,7 +32,7 @@ Scans project dependencies for known vulnerabilities using OWASP Dependency Chec
 
 ## Requirements
 
-- Jenkins agent with label `codeql-agent`
+- Jenkins agent with label `security-scanner-agent`
 - CodeQL CLI installed at `/usr/local/bin/codeql`
 - OWASP Dependency Check installed at `/usr/share/dependency-check`
 - Required Jenkins plugins:

@@ -39,6 +39,7 @@ module "jenkins" {
   
   jenkins_ssh_key_secret_name = aws_secretsmanager_secret.jenkins_key.name
   jenkins_ssh_key_secret_arn  = aws_secretsmanager_secret.jenkins_key.arn
+  db_credentials_secret_arn   = module.rds.db_credentials_secret_arn
   
   tags = {
     Environment = var.environment
@@ -62,4 +63,31 @@ module "security_scanner" {
   allowed_http_cidr_blocks = [format("%s/32", module.jenkins.jenkins_master_private_ip)]
   allowed_https_cidr_blocks = [format("%s/32", module.jenkins.jenkins_master_private_ip)]
   volume_size = 64  # Increase from default 32GB to 64GB
+  db_credentials_secret_arn = module.rds.db_credentials_secret_arn
+}
+
+# Create RDS instance
+module "rds" {
+  source = "./modules/rds"
+
+  environment = var.environment
+  vpc_id      = module.vpc.vpc_id
+  subnet_ids  = module.vpc.private_subnets
+
+  allowed_security_group_ids = [
+    module.jenkins.jenkins_master_security_group_id,
+    module.security_scanner.security_group_id
+  ]
+
+  # Optional: override defaults
+  instance_class       = "db.t3.medium"
+  allocated_storage    = 20
+  database_name        = "appdb"
+  master_username      = "dbadmin"
+
+  tags = {
+    Environment = var.environment
+    Project     = "shared-infrastructure"
+    Terraform   = "true"
+  }
 }

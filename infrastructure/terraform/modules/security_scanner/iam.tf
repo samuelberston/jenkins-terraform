@@ -34,4 +34,22 @@ resource "aws_iam_role" "security_scanner" {
 resource "aws_iam_instance_profile" "security_scanner" {
   name = "security-scanner-profile-${var.environment}-${random_id.suffix.hex}"
   role = aws_iam_role.security_scanner.name
+}
+
+resource "aws_iam_role_policy" "security_scanner_db_access" {
+  name = "security-scanner-db-access-${var.environment}"
+  role = aws_iam_role.security_scanner.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [var.db_credentials_secret_arn]
+      }
+    ]
+  })
 } 

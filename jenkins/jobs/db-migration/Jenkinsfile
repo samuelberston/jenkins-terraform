@@ -1,0 +1,67 @@
+pipeline {
+    agent {
+        node {
+            label 'codeql-agent'  // Reusing existing agent for consistency
+        }
+    }
+    
+    environment {
+        FLYWAY_VERSION = '9.20.0'  // Specify version for consistency
+        DB_CREDENTIALS = credentials('db-credentials-secret-arn')  // ARN of the RDS credentials in Secrets Manager
+    }
+    
+    stages {
+        stage('Setup Flyway') {
+            steps {
+                sh '''
+                    # Download and install Flyway
+                    wget -qO- https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz | tar xvz
+                    sudo mv flyway-${FLYWAY_VERSION} /opt/flyway
+                    sudo ln -s /opt/flyway/flyway /usr/local/bin
+                '''
+            }
+        }
+        
+        stage('Run Migrations') {
+            steps {
+                script {
+                    // Fetch database credentials from AWS Secrets Manager
+                    def dbCreds = sh(
+                        script: """
+                            aws secretsmanager get-secret-value \
+                                --secret-id ${DB_CREDENTIALS} \
+                                --query SecretString \
+                                --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    
+                    // Parse JSON credentials
+                    def creds = readJSON text: dbCreds
+                    
+                    // Create Flyway config file
+                    writeFile file: 'flyway.conf', text: """
+                        flyway.url=jdbc:postgresql://${creds.host}:5432/${creds.dbname}
+                        flyway.user=${creds.username}
+                        flyway.password=${creds.password}
+                        flyway.locations=filesystem:migrations
+                        flyway.connectRetries=3
+                        flyway.baselineOnMigrate=true
+                    """
+                    
+                    // Run migrations
+                    sh '''
+                        flyway -configFiles=flyway.conf info
+                        flyway -configFiles=flyway.conf migrate
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+    }
+} 

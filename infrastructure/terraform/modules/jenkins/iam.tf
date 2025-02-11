@@ -36,4 +36,22 @@ resource "aws_iam_role_policy" "jenkins_secrets_access" {
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy" "jenkins_db_secrets_access" {
+  name = "jenkins-db-secrets-access-${var.environment}"
+  role = aws_iam_role.jenkins_master.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [var.db_credentials_secret_arn]
+      }
+    ]
+  })
 } 

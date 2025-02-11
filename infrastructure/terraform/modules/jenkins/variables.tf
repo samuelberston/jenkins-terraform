@@ -56,3 +56,8 @@ variable "jenkins_ssh_key_secret_arn" {
   description = "ARN of the secret containing the Jenkins SSH private key"
   type        = string
 }
+
+variable "db_credentials_secret_arn" {
+  description = "ARN of the secret containing the database credentials"
+  type        = string
+}
