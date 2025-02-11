@@ -1,6 +1,9 @@
-# CodeQL Module
+# Security Scanner Module
 
-This Terraform module deploys a CodeQL server on AWS EC2, configured to work with Jenkins for automated code analysis.
+This Terraform module deploys a security scanning server on AWS EC2, configured with:
+- CodeQL for code analysis
+- OWASP Dependency Check for dependency scanning
+- Jenkins integration support
 
 ## Features
 

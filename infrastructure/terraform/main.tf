@@ -48,8 +48,8 @@ module "jenkins" {
 }
 
 # Finally create CodeQL
-module "codeql" {
-  source = "./modules/codeql"
+module "security_scanner" {
+  source = "./modules/security_scanner"
 
   vpc_id                    = module.vpc.vpc_id
   subnet_id                 = module.vpc.public_subnets[1]

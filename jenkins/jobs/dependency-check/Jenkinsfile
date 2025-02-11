@@ -29,18 +29,21 @@ pipeline {
                 script {
                     def suppressionOpt = params.SUPPRESSION_FILE ? "--suppression '${params.SUPPRESSION_FILE}'" : ''
                     
-                    sh """
-                        dependency-check \
-                            --scan '${params.SCAN_PATH}' \
-                            --format 'HTML' \
-                            --format 'JSON' \
-                            --format 'SARIF' \
-                            --prettyPrint \
-                            --failOnCVSS 7 \
-                            ${suppressionOpt} \
-                            --out '.' \
-                            --log 'dependency-check.log'
-                    """
+                    echo "Starting dependency check. First run may take 10-20 minutes to download NVD database..."
+                    timeout(time: 30, unit: 'MINUTES') {  // Increased timeout for first run
+                        sh """
+                            dependency-check \
+                                --scan '${params.SCAN_PATH}' \
+                                --format 'HTML' \
+                                --format 'JSON' \
+                                --format 'SARIF' \
+                                --prettyPrint \
+                                --failOnCVSS 7 \
+                                ${suppressionOpt} \
+                                --out '.' \
+                                --log 'dependency-check.log'
+                        """
+                    }
                 }
             }
         }

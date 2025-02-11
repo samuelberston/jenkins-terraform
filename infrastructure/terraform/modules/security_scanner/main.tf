@@ -1,6 +1,6 @@
-resource "aws_security_group" "codeql" {
-  name        = "codeql-${var.environment}"
-  description = "Security group for CodeQL instance"
+resource "aws_security_group" "security_scanner" {
+  name        = "security-scanner-${var.environment}"
+  description = "Security group for Security Scanner instance (CodeQL & Dependency Check)"
   vpc_id      = var.vpc_id
 
   # SSH access
@@ -44,7 +44,7 @@ resource "aws_security_group" "codeql" {
 
   tags = merge(
     {
-      Name        = "codeql-sg-${var.environment}"
+      Name        = "security-scanner-sg-${var.environment}"
       Environment = var.environment
     },
     var.tags
@@ -62,15 +62,15 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
-resource "aws_instance" "codeql" {
+resource "aws_instance" "security_scanner" {
   ami           = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
 
   subnet_id                   = var.subnet_id
-  vpc_security_group_ids     = [aws_security_group.codeql.id]
+  vpc_security_group_ids     = [aws_security_group.security_scanner.id]
   associate_public_ip_address = true
   key_name                   = var.key_name
-  iam_instance_profile       = aws_iam_instance_profile.codeql.name
+  iam_instance_profile       = aws_iam_instance_profile.security_scanner.name
 
   root_block_device {
     volume_size = var.volume_size
@@ -81,7 +81,7 @@ resource "aws_instance" "codeql" {
   user_data = base64encode(<<-EOF
               #!/bin/bash
               yum update -y
-              yum install -y git docker wget unzip
+              yum install -y git docker wget unzip java-11-amazon-corretto-headless
 
               # Install Node.js and npm
               curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
@@ -174,7 +174,7 @@ resource "aws_instance" "codeql" {
 
   tags = merge(
     {
-      Name        = "codeql-${var.environment}"
+      Name        = "security-scanner-${var.environment}"
       Environment = var.environment
       Managed     = "terraform"
     },

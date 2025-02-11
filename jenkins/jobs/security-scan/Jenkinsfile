@@ -6,13 +6,20 @@ pipeline {
     }
     
     parameters {
-        string(name: 'REPOSITORY_URL', description: 'Git repository URL to analyze')
+        string(name: 'REPOSITORY_URL', defaultValue: 'https://github.com/OWASP/NodeGoat.git', description: 'Git repository URL to analyze')
         string(name: 'BRANCH', defaultValue: 'main', description: 'Branch to analyze')
         choice(name: 'LANGUAGE', choices: ['java', 'python', 'javascript', 'cpp'], description: 'Programming language to analyze')
         string(name: 'SCAN_PATH', defaultValue: '.', description: 'Path to scan for dependencies')
     }
     
     stages {
+        stage('Checkout') {
+            steps {
+                cleanWs()
+                git branch: params.BRANCH, url: params.REPOSITORY_URL
+            }
+        }
+        
         stage('Security Scans') {
             parallel {
                 stage('CodeQL Analysis') {
@@ -35,6 +42,12 @@ pipeline {
                     }
                 }
             }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
         }
     }
 } 

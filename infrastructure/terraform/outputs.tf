@@ -1,21 +1,21 @@
-output "codeql_instance_id" {
-  description = "ID of the CodeQL instance"
-  value       = module.codeql.instance_id
+output "security_scanner_instance_id" {
+  description = "ID of the Security Scanner instance"
+  value       = module.security_scanner.instance_id
 }
 
-output "codeql_public_ip" {
-  description = "Public IP of the CodeQL instance"
-  value       = module.codeql.public_ip
+output "security_scanner_public_ip" {
+  description = "Public IP of the Security Scanner instance"
+  value       = module.security_scanner.public_ip
 }
 
-output "codeql_subnet_id" {
-  description = "Subnet ID where CodeQL is deployed"
-  value       = module.codeql.subnet_id
+output "security_scanner_subnet_id" {
+  description = "Subnet ID where Security Scanner is deployed"
+  value       = module.security_scanner.subnet_id
 }
 
-output "codeql_security_group_id" {
-  description = "Security Group ID for CodeQL"
-  value       = module.codeql.security_group_id
+output "security_scanner_security_group_id" {
+  description = "Security Group ID for Security Scanner"
+  value       = module.security_scanner.security_group_id
 }
 
 output "ssh_key_name" {
@@ -53,9 +53,9 @@ output "jenkins_security_group_id" {
   value       = module.jenkins.jenkins_master_security_group_id
 }
 
-output "codeql_ssh_command" {
-  description = "Command to SSH into the CodeQL instance"
-  value       = "aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.jenkins_key.name} --query 'SecretString' --output text > jenkins-key.pem && chmod 400 jenkins-key.pem && ssh -i jenkins-key.pem ec2-user@${module.codeql.public_ip}"
+output "security_scanner_ssh_command" {
+  description = "Command to SSH into the Security Scanner instance"
+  value       = "aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.jenkins_key.name} --query 'SecretString' --output text > jenkins-key.pem && chmod 400 jenkins-key.pem && ssh -i jenkins-key.pem ec2-user@${module.security_scanner.public_ip}"
 }
 
 output "jenkins_ssh_command" {
