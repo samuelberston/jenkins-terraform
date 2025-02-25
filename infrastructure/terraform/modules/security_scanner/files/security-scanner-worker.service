@@ -1,0 +1,18 @@
+[Unit]
+Description=Security Scanner Worker Service
+After=network.target
+
+[Service]
+Type=simple
+User=jenkins
+Group=jenkins
+WorkingDirectory=/var/lib/security_scanner
+ExecStart=/usr/bin/python3 /opt/security_scanner/scan_worker.py
+Restart=always
+RestartSec=10
+Environment=SCAN_QUEUE_URL=${scan_queue_url}
+Environment=GITHUB_TOKEN_SECRET_ARN=${github_token_secret_arn}
+Environment=DB_CREDENTIALS_SECRET_ARN=${db_credentials_secret_arn}
+
+[Install]
+WantedBy=multi-user.target 

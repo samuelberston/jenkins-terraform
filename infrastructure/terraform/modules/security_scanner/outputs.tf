@@ -34,4 +34,9 @@ output "iam_role_id" {
 output "iam_role_arn" {
   description = "ARN of the Security Scanner IAM role"
   value       = aws_iam_role.security_scanner.arn
+}
+
+output "security_scanner_url" {
+  description = "URL of the security scanner instance"
+  value       = "http://${aws_instance.security_scanner.public_ip}"
 } 

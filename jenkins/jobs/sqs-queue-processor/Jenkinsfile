@@ -1,0 +1,83 @@
+pipeline {
+    agent {
+        node {
+            label 'security-scanner-agent'
+        }
+    }
+    
+    triggers {
+        cron('H/5 * * * *')  // Run every 5 minutes
+    }
+    
+    environment {
+        AWS_REGION = 'us-west-1'
+        SQS_QUEUE_URL = credentials('sqs-queue-url')
+    }
+    
+    stages {
+        stage('Poll SQS Queue') {
+            steps {
+                script {
+                    def messages = sh(
+                        script: """
+                            aws sqs receive-message \
+                                --queue-url ${SQS_QUEUE_URL} \
+                                --max-number-of-messages 10 \
+                                --visibility-timeout 300 \
+                                --wait-time-seconds 1 \
+                                --output json
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    
+                    if (messages) {
+                        def json = readJSON text: messages
+                        def messageList = json.Messages ?: []
+                        
+                        echo "Received ${messageList.size()} messages from SQS queue"
+                        
+                        messageList.each { message ->
+                            def body = readJSON text: message.Body
+                            def receiptHandle = message.ReceiptHandle
+                            
+                            echo "Processing message: ${body.repository_url}"
+                            
+                            try {
+                                // Trigger scan job
+                                build job: 'api-triggered-scan', parameters: [
+                                    string(name: 'REPOSITORY_URL', value: body.repository_url),
+                                    string(name: 'BRANCH', value: body.branch ?: 'main'),
+                                    string(name: 'LANGUAGE', value: body.language ?: 'auto'),
+                                    string(name: 'SCAN_PATH', value: body.scan_path ?: '.'),
+                                    string(name: 'SCAN_TYPE', value: body.scan_type ?: 'full'),
+                                    string(name: 'CALLBACK_URL', value: body.callback_url ?: ''),
+                                    string(name: 'MESSAGE_ID', value: message.MessageId)
+                                ]
+                                
+                                // Delete message from queue after successful processing
+                                sh """
+                                    aws sqs delete-message \
+                                        --queue-url ${SQS_QUEUE_URL} \
+                                        --receipt-handle "${receiptHandle}"
+                                """
+                                
+                                echo "Message deleted from queue"
+                            } catch (Exception e) {
+                                echo "Failed to process message: ${e.message}"
+                                // Message will return to the queue after visibility timeout
+                            }
+                        }
+                    } else {
+                        echo "No messages in queue"
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}

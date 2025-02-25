@@ -63,4 +63,30 @@ variable "allowed_https_cidr_blocks" {
 variable "db_credentials_secret_arn" {
   description = "ARN of the secret containing the database credentials"
   type        = string
+}
+
+variable "scan_queue_url" {
+  description = "URL of the SQS queue for scan jobs"
+  type        = string
+}
+
+variable "scan_queue_arn" {
+  description = "ARN of the SQS queue for scan jobs"
+  type        = string
+}
+
+variable "additional_iam_policies" {
+  description = "List of additional IAM policy ARNs to attach to the security scanner role"
+  type        = list(string)
+  default     = []
+}
+
+variable "github_token_secret_arn" {
+  description = "ARN of the secret containing the GitHub access token"
+  type        = string
+}
+
+variable "setup_bucket" {
+  description = "S3 bucket containing setup scripts"
+  type        = string
 } 

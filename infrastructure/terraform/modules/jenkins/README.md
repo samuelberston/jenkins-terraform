@@ -1,3 +1,6 @@
+## TODO
+Jenkins JCasC set up to automatically configure SQS queue processor and api-triggered-scan jobs and credentials
+
 # Jenkins Module
 
 This Terraform module deploys a Jenkins master server on AWS EC2, pre-configured with CodeQL integration and essential plugins.

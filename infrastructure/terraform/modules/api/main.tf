@@ -23,11 +23,15 @@ resource "aws_lambda_function" "trigger_scan" {
   handler         = "index.handler"
   runtime         = "python3.9"
   timeout         = 30
+  layers          = [aws_lambda_layer_version.dependencies_layer.arn]
 
   environment {
     variables = {
       JENKINS_URL      = var.jenkins_url
-      JENKINS_API_TOKEN_SECRET_ARN = aws_secretsmanager_secret.jenkins_api_token.arn
+      JENKINS_API_TOKEN_SECRET_ARN = var.jenkins_api_token_secret_arn
+      SCAN_QUEUE_URL   = var.scan_queue_url
+      USE_QUEUE        = "true"
+      SECURITY_SCANNER_URL = var.security_scanner_url
     }
   }
 }

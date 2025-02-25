@@ -108,9 +108,12 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
-# Store database credentials in Secrets Manager
+resource "random_id" "secret_suffix" {
+  byte_length = 4
+}
+
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name = "db-credentials-${var.environment}"
+  name = "db-credentials-${var.environment}-${random_id.secret_suffix.hex}"
   description = "Database credentials for ${var.environment} environment"
 }
 

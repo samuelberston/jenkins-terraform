@@ -1,0 +1,18 @@
+[Unit]
+Description=Security Scanner Worker Service
+After=network.target
+
+[Service]
+Type=simple
+User=jenkins
+Group=jenkins
+WorkingDirectory=/var/lib/security_scanner
+ExecStart=/usr/bin/python3 /opt/security_scanner/scan_worker.py
+Restart=always
+RestartSec=10
+Environment=SCAN_QUEUE_URL=https://sqs.us-west-1.amazonaws.com/659931264778/security-scan-queue-dev
+Environment=GITHUB_TOKEN_SECRET_ARN=arn:aws:secretsmanager:us-west-1:659931264778:secret:github-access-token-dev-1VzWUV
+Environment=DB_CREDENTIALS_SECRET_ARN=arn:aws:secretsmanager:us-west-1:659931264778:secret:db-credentials-dev-a170b243-1VzWUV
+
+[Install]
+WantedBy=multi-user.target 

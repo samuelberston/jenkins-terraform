@@ -62,6 +62,16 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
+# Create template files with variable substitution
+resource "local_file" "worker_service" {
+  content = templatefile("${path.module}/files/security-scanner-worker.service", {
+    scan_queue_url = var.scan_queue_url
+    github_token_secret_arn = var.github_token_secret_arn
+    db_credentials_secret_arn = var.db_credentials_secret_arn
+  })
+  filename = "${path.module}/files/rendered/security-scanner-worker.service"
+}
+
 resource "aws_instance" "security_scanner" {
   ami           = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
@@ -78,93 +88,38 @@ resource "aws_instance" "security_scanner" {
     encrypted   = true
   }
 
+  # Use a minimal user_data script that downloads the setup script from S3
   user_data = base64encode(<<-EOF
               #!/bin/bash
-              yum update -y
-              yum install -y git docker wget unzip java-11-amazon-corretto-headless
-
-              # Install Node.js and npm
-              curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-              export NVM_DIR="$HOME/.nvm"
-              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-              [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-              nvm install --lts
-              nvm use --lts
-
-              # Make Node.js available system-wide
-              ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/node" /usr/local/bin/node
-              ln -s "$NVM_DIR/versions/node/$(nvm version)/bin/npm" /usr/local/bin/npm
-
-              # Start and enable Docker
-              systemctl start docker
-              systemctl enable docker
-
-              # Install CodeQL
-              CODEQL_VERSION="2.20.4"
-              cd /opt
-              wget https://github.com/github/codeql-cli-binaries/releases/download/v$${CODEQL_VERSION}/codeql-linux64.zip
-              unzip codeql-linux64.zip
-              rm codeql-linux64.zip
-              mv codeql /usr/local/
-              ln -s /usr/local/codeql/codeql /usr/local/bin/codeql
-
-              # Create a script to initialize environment variables
-              cat > /etc/profile.d/codeql-env.sh << 'ENVSCRIPT'
-              export PATH="/usr/local/bin:$PATH"
-              export NODE_PATH="/usr/local/lib/node_modules"
-              ENVSCRIPT
-
-              # Make the script executable
-              chmod +x /etc/profile.d/codeql-env.sh
-
-              # Verify installations
-              source /etc/profile.d/codeql-env.sh
-              codeql version
-              node --version
-              npm --version
-
-              # Install OWASP Dependency Check
-              DC_VERSION="12.0.2"
-              DC_DIR="/usr/share/dependency-check"
-              sudo mkdir -p $DC_DIR
-              cd $DC_DIR
-              wget "https://github.com/jeremylong/DependencyCheck/releases/download/v$${DC_VERSION}/dependency-check-$${DC_VERSION}-release.zip"
-              unzip "dependency-check-$${DC_VERSION}-release.zip"
-              rm "dependency-check-$${DC_VERSION}-release.zip"
-              sudo ln -s $DC_DIR/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check
-
-              # Skip initial NVD database download
-              # dependency-check --updateonly
-
-              # Create a daily cron job to update the NVD database (commented out for now)
-              # echo "0 0 * * * dependency-check --updateonly" | sudo tee -a /var/spool/cron/root
-
-              # Create jenkins user and group
-              sudo groupadd jenkins
-              sudo useradd -g jenkins jenkins
+              set -e
               
-              # Set up directories for Jenkins agent
-              sudo mkdir -p /home/jenkins
-              sudo chown -R jenkins:jenkins /home/jenkins
+              # Install AWS CLI if not already installed
+              if ! command -v aws &> /dev/null; then
+                yum install -y unzip
+                curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                unzip awscliv2.zip
+                ./aws/install
+              fi
               
-              # Give jenkins user access to necessary directories
-              sudo usermod -aG docker jenkins
-              sudo mkdir -p /var/lib/codeql
-              sudo chown -R jenkins:jenkins /var/lib/codeql
-              sudo mkdir -p /var/lib/dependency-check
-              sudo chown -R jenkins:jenkins /var/lib/dependency-check
+              # Create directories
+              mkdir -p /opt/security_scanner
+              mkdir -p /var/log/security_scanner
               
-              # Allow jenkins user to execute required commands
-              echo "jenkins ALL=(ALL) NOPASSWD: /usr/local/bin/codeql" | sudo tee -a /etc/sudoers.d/jenkins
-              echo "jenkins ALL=(ALL) NOPASSWD: /usr/local/bin/dependency-check" | sudo tee -a /etc/sudoers.d/jenkins
+              # Download setup script from S3
+              aws s3 cp s3://${var.setup_bucket}/security-scanner-setup.sh /opt/security_scanner/
+              aws s3 cp s3://${var.setup_bucket}/scan_worker.py /opt/security_scanner/
               
-              # Set up SSH access for jenkins user
-              sudo mkdir -p /home/jenkins/.ssh
-              sudo touch /home/jenkins/.ssh/authorized_keys
-              sudo chown -R jenkins:jenkins /home/jenkins/.ssh
-              sudo chmod 700 /home/jenkins/.ssh
-              sudo chmod 600 /home/jenkins/.ssh/authorized_keys
+              # Make scripts executable
+              chmod +x /opt/security_scanner/security-scanner-setup.sh
+              chmod +x /opt/security_scanner/scan_worker.py
               
+              # Export environment variables
+              export SCAN_QUEUE_URL="${var.scan_queue_url}"
+              export GITHUB_TOKEN_SECRET_ARN="${var.github_token_secret_arn}"
+              export DB_CREDENTIALS_SECRET_ARN="${var.db_credentials_secret_arn}"
+              
+              # Run setup script
+              /opt/security_scanner/security-scanner-setup.sh > /var/log/security_scanner/setup.log 2>&1
               EOF
   )
 

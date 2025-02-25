@@ -61,3 +61,18 @@ variable "db_credentials_secret_arn" {
   description = "ARN of the secret containing the database credentials"
   type        = string
 }
+
+variable "scan_queue_url" {
+  description = "URL of the SQS queue for scan jobs"
+  type        = string
+}
+
+variable "scan_queue_arn" {
+  description = "ARN of the SQS queue for scan jobs"
+  type        = string
+}
+
+variable "github_token_secret_arn" {
+  description = "ARN of the secret containing the GitHub access token"
+  type        = string
+}

@@ -1,6 +1,10 @@
 # Create a secret to store the Jenkins API token
+resource "random_id" "secret_suffix" {
+  byte_length = 4
+}
+
 resource "aws_secretsmanager_secret" "jenkins_api_token" {
-  name        = "jenkins-api-token-${var.environment}"
+  name        = "jenkins-api-token-${var.environment}-${random_id.secret_suffix.hex}"
   description = "Jenkins API token for security scan automation"
   tags        = var.tags
 }

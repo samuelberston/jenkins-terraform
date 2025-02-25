@@ -53,9 +53,14 @@ data "aws_ami" "amazon_linux_2023" {
 # Add data source for current region
 data "aws_region" "current" {}
 
+# Create a random ID for the secret suffix
+resource "random_id" "secret_suffix" {
+  byte_length = 4
+}
+
 # Create a secret for Jenkins admin password
 resource "aws_secretsmanager_secret" "jenkins_admin_password" {
-  name        = "jenkins-admin-password-${var.environment}"
+  name        = "jenkins-admin-password-${var.environment}-${random_id.secret_suffix.hex}"
   description = "Initial Jenkins administrator password for ${var.environment} environment"
 }
 

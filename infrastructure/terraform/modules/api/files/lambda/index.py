@@ -2,7 +2,47 @@ import os
 import json
 import boto3
 import requests
+import re
 from base64 import b64encode
+
+def validate_github_url(url):
+    """Validate that the URL is a GitHub repository URL"""
+    github_pattern = r'^https?://github\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+/?$'
+    return re.match(github_pattern, url) is not None
+
+def send_to_queue(event_body):
+    """Send scan request to SQS queue"""
+    sqs = boto3.client('sqs')
+    queue_url = os.environ['SCAN_QUEUE_URL']
+    
+    # Create message with all necessary scan parameters
+    message = {
+        'repository_url': event_body['repository_url'],
+        'branch': event_body.get('branch', 'main'),
+        'language': event_body.get('language', 'auto'),
+        'scan_path': event_body.get('scan_path', '.'),
+        'scan_type': event_body.get('scan_type', 'full'),
+        'priority': event_body.get('priority', 'normal'),
+        'callback_url': event_body.get('callback_url', '')
+    }
+    
+    # Send message to queue
+    response = sqs.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps(message),
+        MessageAttributes={
+            'ScanType': {
+                'DataType': 'String',
+                'StringValue': message['scan_type']
+            },
+            'Priority': {
+                'DataType': 'String',
+                'StringValue': message['priority']
+            }
+        }
+    )
+    
+    return response['MessageId']
 
 def get_jenkins_token():
     """Retrieve Jenkins API token from Secrets Manager"""
@@ -27,8 +67,9 @@ def trigger_jenkins_job(event_body):
     params = {
         'REPOSITORY_URL': event_body['repository_url'],
         'BRANCH': event_body.get('branch', 'main'),
-        'LANGUAGE': event_body.get('language', 'javascript'),
-        'SCAN_PATH': event_body.get('scan_path', '.')
+        'LANGUAGE': event_body.get('language', 'auto'),
+        'SCAN_PATH': event_body.get('scan_path', '.'),
+        'SCAN_TYPE': event_body.get('scan_type', 'full')
     }
     
     # Build parameters string
@@ -57,19 +98,42 @@ def handler(event, context):
                 'body': json.dumps({'error': 'repository_url is required'})
             }
         
-        # Trigger Jenkins job
-        queue_url = trigger_jenkins_job(body)
-        
-        return {
-            'statusCode': 202,
-            'body': json.dumps({
-                'message': 'Security scan triggered successfully',
-                'queue_url': queue_url
-            }),
-            'headers': {
-                'Content-Type': 'application/json'
+        # Validate GitHub URL
+        if not validate_github_url(body['repository_url']):
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid GitHub repository URL'})
             }
-        }
+        
+        # Determine if we should use queue or direct Jenkins trigger
+        use_queue = os.environ.get('USE_QUEUE', 'true').lower() == 'true'
+        
+        if use_queue:
+            # Send to SQS queue
+            message_id = send_to_queue(body)
+            return {
+                'statusCode': 202,
+                'body': json.dumps({
+                    'message': 'Security scan request queued successfully',
+                    'message_id': message_id
+                }),
+                'headers': {
+                    'Content-Type': 'application/json'
+                }
+            }
+        else:
+            # Legacy direct Jenkins trigger
+            queue_url = trigger_jenkins_job(body)
+            return {
+                'statusCode': 202,
+                'body': json.dumps({
+                    'message': 'Security scan triggered successfully',
+                    'queue_url': queue_url
+                }),
+                'headers': {
+                    'Content-Type': 'application/json'
+                }
+            }
         
     except Exception as e:
         return {

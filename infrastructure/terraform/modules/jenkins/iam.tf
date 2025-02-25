@@ -54,4 +54,43 @@ resource "aws_iam_role_policy" "jenkins_db_secrets_access" {
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy" "jenkins_sqs_access" {
+  name = "jenkins-sqs-access-${var.environment}"
+  role = aws_iam_role.jenkins_master.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:SendMessage"
+        ]
+        Resource = [var.scan_queue_arn]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "jenkins_github_token_access" {
+  name = "jenkins-github-token-access-${var.environment}"
+  role = aws_iam_role.jenkins_master.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [var.github_token_secret_arn]
+      }
+    ]
+  })
 } 
